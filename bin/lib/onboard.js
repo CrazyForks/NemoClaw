@@ -150,13 +150,15 @@ async function startGateway(gpu) {
 async function createSandbox(gpu) {
   step(3, 7, "Creating sandbox");
 
-  const nameAnswer = await prompt("  Sandbox name [my-assistant]: ");
-  const sandboxName = (nameAnswer || "my-assistant").trim();
+  const nameAnswer = await prompt("  Sandbox name (lowercase, numbers, hyphens) [my-assistant]: ");
+  const sandboxName = (nameAnswer || "my-assistant").trim().toLowerCase();
 
-  // Validate sandbox name — alphanumeric, hyphens, and underscores only
-  if (!/^[a-zA-Z0-9_-]+$/.test(sandboxName)) {
+  // Validate: RFC 1123 subdomain — lowercase alphanumeric and hyphens,
+  // must start and end with alphanumeric (required by Kubernetes/OpenShell)
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(sandboxName)) {
     console.error(`  Invalid sandbox name: '${sandboxName}'`);
-    console.error("  Names must contain only letters, numbers, hyphens, and underscores.");
+    console.error("  Names must be lowercase, contain only letters, numbers, and hyphens,");
+    console.error("  and must start and end with a letter or number.");
     process.exit(1);
   }
 
