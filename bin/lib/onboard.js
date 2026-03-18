@@ -13,6 +13,11 @@ const {
   validateLocalProvider,
 } = require("./local-inference");
 const {
+  DEFAULT_CLOUD_MODEL,
+  DEFAULT_OLLAMA_MODEL,
+  getProviderSelectionConfig,
+} = require("./inference-config");
+const {
   inferContainerRuntime,
   isUnsupportedMacosRuntime,
   shouldPatchCoredns,
@@ -50,6 +55,10 @@ function step(n, total, msg) {
   console.log("");
   console.log(`  [${n}/${total}] ${msg}`);
   console.log(`  ${"─".repeat(50)}`);
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 function isDockerRunning() {
@@ -378,7 +387,7 @@ async function setupNim(sandboxName, gpu) {
     if (ollamaRunning) {
       console.log("  ✓ Ollama detected on localhost:11434 — using it [experimental]");
       provider = "ollama-local";
-      model = "nemotron-3-nano";
+      model = DEFAULT_OLLAMA_MODEL;
       registry.updateSandbox(sandboxName, { model, provider, nimContainer });
       return { model, provider };
     }
@@ -517,7 +526,7 @@ async function setupNim(sandboxName, gpu) {
       }
       console.log("  ✓ Using Ollama on localhost:11434");
       provider = "ollama-local";
-      model = "nemotron-3-nano";
+      model = DEFAULT_OLLAMA_MODEL;
     } else if (selected.key === "install-ollama") {
       console.log("  Installing Ollama via Homebrew...");
       run("brew install ollama", { ignoreError: true });
@@ -526,7 +535,7 @@ async function setupNim(sandboxName, gpu) {
         sleep(2);
       console.log("  ✓ Using Ollama on localhost:11434");
       provider = "ollama-local";
-      model = "nemotron-3-nano";
+      model = DEFAULT_OLLAMA_MODEL;
     } else if (selected.key === "vllm") {
       console.log("  ✓ Using existing vLLM on localhost:8000");
       provider = "vllm-local";
@@ -546,7 +555,7 @@ async function setupNim(sandboxName, gpu) {
     } else {
       await ensureApiKey();
     }
-    model = model || requestedModel || "nvidia/nemotron-3-super-120b-a12b";
+    model = model || requestedModel || DEFAULT_CLOUD_MODEL;
     console.log(`  Using NVIDIA Cloud API with model: ${model}`);
   }
 
@@ -619,14 +628,43 @@ async function setupInference(sandboxName, model, provider) {
 
 // ── Step 6: OpenClaw ─────────────────────────────────────────────
 
-async function setupOpenclaw(sandboxName) {
+async function setupOpenclaw(sandboxName, model, provider) {
   step(6, 7, "Setting up OpenClaw inside sandbox");
 
-  // sandbox create with a command runs it inside the sandbox then exits.
-  // Since the sandbox already exists, we create a throwaway connect + command
-  // by using sandbox create --no-keep with the same image to exec into it.
-  // Simpler: just use sandbox connect which opens a shell — but it doesn't
-  // support passing commands. So we run the setup on next connect instead.
+  const selectionConfig = getProviderSelectionConfig(provider, model);
+  if (selectionConfig) {
+    const sandboxConfig = {
+      ...selectionConfig,
+      onboardedAt: new Date().toISOString(),
+    };
+    const command = `
+set -euo pipefail
+mkdir -p ~/.nemoclaw ~/.openclaw
+cat > ~/.nemoclaw/config.json <<'EOF_NEMOCLAW_CFG'
+${JSON.stringify(sandboxConfig, null, 2)}
+EOF_NEMOCLAW_CFG
+python3 - <<'PYCFG'
+import json
+import os
+
+cfg_path = os.path.expanduser('~/.openclaw/openclaw.json')
+cfg = {}
+if os.path.exists(cfg_path):
+    with open(cfg_path) as f:
+        cfg = json.load(f)
+
+cfg.setdefault('agents', {}).setdefault('defaults', {}).setdefault('model', {})['primary'] = ${JSON.stringify(sandboxConfig.model)}
+
+with open(cfg_path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+
+os.chmod(cfg_path, 0o600)
+PYCFG
+openclaw models set ${shellQuote(sandboxConfig.model)} > /dev/null 2>&1 || true
+`;
+    run(`openshell sandbox connect "${sandboxName}" -- bash -lc ${shellQuote(command)}`);
+  }
+
   console.log("  ✓ OpenClaw gateway launched inside sandbox");
 }
 
@@ -750,6 +788,7 @@ function printDashboard(sandboxName, model, provider) {
   let providerLabel = provider;
   if (provider === "nvidia-nim") providerLabel = "NVIDIA Cloud API";
   else if (provider === "vllm-local") providerLabel = "Local vLLM";
+  else if (provider === "ollama-local") providerLabel = "Local Ollama";
 
   console.log("");
   console.log(`  ${"─".repeat(50)}`);
@@ -780,7 +819,7 @@ async function onboard(opts = {}) {
   const sandboxName = await createSandbox(gpu);
   const { model, provider } = await setupNim(sandboxName, gpu);
   await setupInference(sandboxName, model, provider);
-  await setupOpenclaw(sandboxName);
+  await setupOpenclaw(sandboxName, model, provider);
   await setupPolicies(sandboxName);
   printDashboard(sandboxName, model, provider);
 }
