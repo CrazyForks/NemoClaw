@@ -100,9 +100,13 @@ reviews:
           block language: flag as issues.
         - LLM-generated patterns (bold overuse, em dashes, superlatives,
           hedge words): flag as suggestions with the note "LLM pattern detected."
-    - path: "**.md"
+    - path: "**/*.md"
       instructions: |
-        For any Markdown file outside docs/, still check for these basics:
+        This rule applies to all Markdown files project-wide. For files
+        under docs/, the stricter docs/** rules defined earlier in this
+        file take precedence; this rule adds baseline checks for every
+        other Markdown file (README, CONTRIBUTING, architecture docs, etc.).
+
         - NVIDIA must be all caps (not Nvidia, nvidia).
         - NemoClaw, OpenClaw, and OpenShell must use correct casing.
         - No emoji in technical prose.
