@@ -123,7 +123,7 @@ nim.assessNimModels = () => [{
 }];
 nim.pullNimImage = () => "nvcr.io/nim/nvidia/nemotron-3-nano:latest";
 nim.startNimContainer = () => "nemoclaw-nim-selection-test";
-nim.waitForNimHealth = () => true;
+nim.monitorNimStartup = () => ({ healthy: true, state: "running" });
 nim.resolveRunningNimModel = () => "nvidia/nemotron-3-nano";
 registry.updateSandbox = (_name, update) => updates.push(update);
 

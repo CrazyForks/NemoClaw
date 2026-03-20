@@ -55,6 +55,37 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+const NIM_FATAL_LOG_PATTERNS = [
+  {
+    pattern: /error decoding response body/i,
+    reason: "NIM failed while downloading model files from NGC. This is usually a network or partial-download issue.",
+  },
+  {
+    pattern: /requires an API key, but none was found/i,
+    reason: "NIM startup failed because NVIDIA_API_KEY/NGC_API_KEY was not provided to the container.",
+  },
+  {
+    pattern: /manifestdownloaderror/i,
+    reason: "NIM failed while downloading the model manifest or weights.",
+  },
+  {
+    pattern: /access denied|401 authorization required|denied: please accept license/i,
+    reason: "NIM could not access required model artifacts from NGC.",
+  },
+  {
+    pattern: /no compatible profile/i,
+    reason: "NIM could not find a compatible runtime profile for this machine.",
+  },
+  {
+    pattern: /detected 0 compatible profile\(s\)/i,
+    reason: "NIM did not find a compatible profile for the detected hardware.",
+  },
+  {
+    pattern: /traceback \(most recent call last\)/i,
+    reason: "NIM startup hit a Python exception before becoming healthy.",
+  },
+];
+
 function getContainerCredentialArgs() {
   const args = [];
   const nvidiaApiKey = (process.env.NVIDIA_API_KEY || "").trim();
@@ -473,6 +504,79 @@ function startNimContainer(sandboxName, model, port = 8000, imageOverride = null
   return name;
 }
 
+function getContainerState(container) {
+  const state = runner.runCapture(
+    `docker inspect --format '{{.State.Status}}' ${container} 2>/dev/null`,
+    { ignoreError: true }
+  );
+  return state || null;
+}
+
+function getContainerLogs(container, lines = 120) {
+  return runner.runCapture(`docker logs --tail ${String(lines)} ${container} 2>&1`, {
+    ignoreError: true,
+  });
+}
+
+function detectFatalLog(logs) {
+  if (!logs) return null;
+  for (const entry of NIM_FATAL_LOG_PATTERNS) {
+    const match = logs.match(entry.pattern);
+    if (match) {
+      return {
+        reason: entry.reason,
+        detail: logs.trim().split(/\r?\n/).slice(-20).join("\n"),
+        fatalPattern: entry.pattern.source,
+      };
+    }
+  }
+  return null;
+}
+
+function monitorNimStartup(sandboxName, port = 8000, timeout = 1800) {
+  const container = containerName(sandboxName);
+  const start = Date.now();
+  const interval = 5000;
+  console.log(`  Waiting for NIM health on port ${port} (timeout: ${timeout}s)...`);
+
+  while ((Date.now() - start) / 1000 < timeout) {
+    try {
+      const result = runner.runCapture(`curl -sf http://localhost:${port}/v1/models`, {
+        ignoreError: true,
+      });
+      if (result) {
+        console.log("  NIM is healthy.");
+        return { healthy: true, state: "running" };
+      }
+    } catch {}
+
+    const state = getContainerState(container);
+    const logs = getContainerLogs(container);
+    const fatal = detectFatalLog(logs);
+    if (fatal) {
+      return { healthy: false, state: state || "unknown", ...fatal };
+    }
+    if (state && state !== "running" && state !== "created") {
+      return {
+        healthy: false,
+        state,
+        reason: `Local NIM container exited before becoming healthy (state: ${state}).`,
+        detail: logs.trim().split(/\r?\n/).slice(-20).join("\n"),
+      };
+    }
+
+    require("child_process").spawnSync("sleep", ["5"]);
+  }
+
+  const finalLogs = getContainerLogs(container);
+  return {
+    healthy: false,
+    state: getContainerState(container) || "unknown",
+    reason: `Local NIM did not become healthy within ${timeout}s.`,
+    detail: finalLogs.trim().split(/\r?\n/).slice(-20).join("\n"),
+  };
+}
+
 function waitForNimHealth(port = 8000, timeout = 300) {
   const start = Date.now();
   const interval = 5000;
@@ -535,6 +639,7 @@ module.exports = {
   getCompatibleModels,
   getRecommendedModels,
   resolveRunningNimModel,
+  monitorNimStartup,
   pullNimImage,
   startNimContainer,
   waitForNimHealth,

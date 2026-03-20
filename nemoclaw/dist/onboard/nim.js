@@ -18,6 +18,7 @@ exports.getCompatibleModels = getCompatibleModels;
 exports.getRecommendedModels = getRecommendedModels;
 exports.resolveRunningNimModel = resolveRunningNimModel;
 exports.startNimContainer = startNimContainer;
+exports.monitorNimStartup = monitorNimStartup;
 exports.waitForNimHealth = waitForNimHealth;
 const node_child_process_1 = require("node:child_process");
 const nim_images_json_1 = __importDefault(require("../../../bin/lib/nim-images.json"));
@@ -86,6 +87,36 @@ function extractExecErrorMessage(err) {
 function shellQuote(value) {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+const NIM_FATAL_LOG_PATTERNS = [
+    {
+        pattern: /error decoding response body/i,
+        reason: "NIM failed while downloading model files from NGC. This is usually a network or partial-download issue.",
+    },
+    {
+        pattern: /requires an API key, but none was found/i,
+        reason: "NIM startup failed because NVIDIA_API_KEY/NGC_API_KEY was not provided to the container.",
+    },
+    {
+        pattern: /manifestdownloaderror/i,
+        reason: "NIM failed while downloading the model manifest or weights.",
+    },
+    {
+        pattern: /access denied|401 authorization required|denied: please accept license/i,
+        reason: "NIM could not access required model artifacts from NGC.",
+    },
+    {
+        pattern: /no compatible profile/i,
+        reason: "NIM could not find a compatible runtime profile for this machine.",
+    },
+    {
+        pattern: /detected 0 compatible profile\(s\)/i,
+        reason: "NIM did not find a compatible profile for the detected hardware.",
+    },
+    {
+        pattern: /traceback \(most recent call last\)/i,
+        reason: "NIM startup hit a Python exception before becoming healthy.",
+    },
+];
 function getPullCandidatesForModel(modelName) {
     const primary = getImageForModel(modelName);
     if (!primary) {
@@ -256,6 +287,15 @@ function describeGpuFamilies(profile) {
     }
     return `${families.slice(0, 3).join("/")}+`;
 }
+function describeDetectedGpu(gpu) {
+    if (gpu.family) {
+        return gpu.family;
+    }
+    if ((gpu.families?.length ?? 0) > 0) {
+        return gpu.families.join("/");
+    }
+    return "detected GPU";
+}
 function describeProfile(profile) {
     const count = profile.minGpuCount ?? 1;
     const family = describeGpuFamilies(profile);
@@ -269,7 +309,7 @@ function evaluateProfile(profile, gpu, freeDiskGB) {
     if ((profile.gpuFamilies?.length ?? 0) > 0) {
         const families = gpu.families ?? [];
         if (!families.some((family) => profile.gpuFamilies?.includes(family))) {
-            unmetRequirements.push(`GPU family (${describeGpuFamilies(profile)})`);
+            unmetRequirements.push(`published support for ${describeGpuFamilies(profile)} (detected ${describeDetectedGpu(gpu)})`);
             gap += 1000;
         }
     }
@@ -388,7 +428,7 @@ function assessNimModels(gpu, freeDiskGB = gpu.freeDiskGB ?? null) {
                 status: "supported",
                 score: bestMatch.score,
                 matchedProfile: bestMatch.profile,
-                reason: `Fits this machine via ${describeProfile(bestMatch.profile)}.`,
+                reason: `Matches the published support profile for ${describeDetectedGpu(gpu)} via ${describeProfile(bestMatch.profile)}.`,
             });
             continue;
         }
@@ -420,7 +460,7 @@ function assessNimModels(gpu, freeDiskGB = gpu.freeDiskGB ?? null) {
     for (const [index, assessment] of compatible.entries()) {
         if (index < recommendedLimit && assessment.score >= topScore - 18) {
             assessment.status = "recommended";
-            assessment.reason = `Recommended for this machine via ${describeProfile(assessment.matchedProfile ?? {})}.`;
+            assessment.reason = `Recommended on ${describeDetectedGpu(gpu)} based on the published support profile ${describeProfile(assessment.matchedProfile ?? {})}.`;
         }
     }
     incompatible.sort((left, right) => {
@@ -480,6 +520,67 @@ function startNimContainer(sandboxName, model, runtime, port = 8000, imageOverri
     const envArgs = credentialArgs.length > 0 ? `${credentialArgs.join(" ")} ` : "";
     runtime.exec(`docker run -d --gpus all -p ${String(port)}:8000 --name ${name} --shm-size 16g ${envArgs}${image}`);
     return name;
+}
+function getContainerState(runtime, container) {
+    const state = tryExec(runtime, `docker inspect --format '{{.State.Status}}' ${container} 2>/dev/null`);
+    return state || null;
+}
+function getContainerLogs(runtime, container, lines = 120) {
+    return tryExec(runtime, `docker logs --tail ${String(lines)} ${container} 2>&1`);
+}
+function detectFatalLog(logs) {
+    if (!logs) {
+        return null;
+    }
+    for (const entry of NIM_FATAL_LOG_PATTERNS) {
+        const match = logs.match(entry.pattern);
+        if (match) {
+            const detail = logs.trim().split(/\r?\n/).slice(-20).join("\n");
+            return {
+                reason: entry.reason,
+                detail,
+                fatalPattern: entry.pattern.source,
+            };
+        }
+    }
+    return null;
+}
+function monitorNimStartup(runtime, sandboxName, port = 8000, timeoutSeconds = 1800, sleepSeconds = 5) {
+    const container = containerName(sandboxName);
+    const deadline = Date.now() + timeoutSeconds * 1000;
+    while (Date.now() < deadline) {
+        if (tryExec(runtime, `curl -sf http://localhost:${String(port)}/v1/models 2>/dev/null`)) {
+            return { healthy: true, state: "running" };
+        }
+        const state = getContainerState(runtime, container);
+        const logs = getContainerLogs(runtime, container);
+        const fatal = detectFatalLog(logs);
+        if (fatal) {
+            return {
+                healthy: false,
+                state: state ?? "unknown",
+                reason: fatal.reason,
+                detail: fatal.detail,
+                fatalPattern: fatal.fatalPattern,
+            };
+        }
+        if (state && state !== "running" && state !== "created") {
+            return {
+                healthy: false,
+                state,
+                reason: `Local NIM container exited before becoming healthy (state: ${state}).`,
+                detail: logs.trim().split(/\r?\n/).slice(-20).join("\n"),
+            };
+        }
+        tryExec(runtime, `sleep ${String(sleepSeconds)}`);
+    }
+    const finalLogs = getContainerLogs(runtime, container);
+    return {
+        healthy: false,
+        state: getContainerState(runtime, container) ?? "unknown",
+        reason: `Local NIM did not become healthy within ${String(timeoutSeconds)} seconds.`,
+        detail: finalLogs.trim().split(/\r?\n/).slice(-20).join("\n"),
+    };
 }
 function waitForNimHealth(runtime, port = 8000, timeoutSeconds = 300, sleepSeconds = 5) {
     const deadline = Date.now() + timeoutSeconds * 1000;

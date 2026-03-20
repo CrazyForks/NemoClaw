@@ -207,6 +207,37 @@ describe("nim", () => {
     });
   });
 
+  describe("monitorNimStartup", () => {
+    it("reports a fatal startup error when logs match a known failure pattern", () => {
+      const runnerPath = path.join(__dirname, "..", "bin", "lib", "runner.js");
+      const runner = require(runnerPath);
+      const originalRunCapture = runner.runCapture;
+      runner.runCapture = (command) => {
+        if (command.includes("curl -sf http://localhost:8000/v1/models")) return "";
+        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) return "running";
+        if (command.includes("docker logs --tail 120 nemoclaw-nim-openclaw 2>&1")) {
+          return "nimlib.exceptions.ManifestDownloadError: Error downloading manifest: error decoding response body";
+        }
+        return "";
+      };
+
+      try {
+        assert.deepEqual(
+          nim.monitorNimStartup("openclaw", 8000, 1),
+          {
+            healthy: false,
+            state: "running",
+            reason: "NIM failed while downloading model files from NGC. This is usually a network or partial-download issue.",
+            detail: "nimlib.exceptions.ManifestDownloadError: Error downloading manifest: error decoding response body",
+            fatalPattern: "error decoding response body",
+          }
+        );
+      } finally {
+        runner.runCapture = originalRunCapture;
+      }
+    });
+  });
+
   describe("nimStatus", () => {
     it("returns not running for nonexistent container", () => {
       const st = nim.nimStatus("nonexistent-test-xyz");

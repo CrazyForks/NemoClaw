@@ -22,10 +22,10 @@ import {
   assessNimModels,
   createNimRuntime,
   detectGpu,
+  monitorNimStartup,
   pullNimImage,
   resolveRunningNimModel,
   startNimContainer,
-  waitForNimHealth,
   type NimModelAssessment,
 } from "../onboard/nim.js";
 import { promptInput, promptConfirm, promptSelect } from "../onboard/prompt.js";
@@ -625,8 +625,12 @@ export async function cliOnboard(opts: OnboardOptions): Promise<void> {
     }
 
     logger.info("Waiting for local NIM health check...");
-    if (!waitForNimHealth(runtime)) {
-      logger.error("Local NIM did not become healthy on http://localhost:8000/v1.");
+    const startup = monitorNimStartup(runtime, opts.pluginConfig.sandboxName, 8000, 1800, 5);
+    if (!startup.healthy) {
+      logger.error(startup.reason ?? "Local NIM did not become healthy on http://localhost:8000/v1.");
+      if (startup.detail) {
+        logger.error(startup.detail);
+      }
       return;
     }
 

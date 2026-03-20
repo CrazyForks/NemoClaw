@@ -93,6 +93,29 @@ function defaultCredentialForEndpoint(endpointType) {
             return "";
     }
 }
+async function resolveLocalNimApiKey(opts, nonInteractive, logger) {
+    const envKey = process.env.NVIDIA_API_KEY?.trim();
+    if (opts.apiKey?.trim()) {
+        return opts.apiKey.trim();
+    }
+    if (envKey) {
+        logger.info(`Detected NVIDIA_API_KEY in environment (${(0, validate_js_1.maskApiKey)(envKey)})`);
+        if (nonInteractive) {
+            return envKey;
+        }
+        const useEnv = await (0, prompt_js_1.promptConfirm)("Use this NVIDIA API key for local NIM downloads?", true);
+        if (useEnv) {
+            return envKey;
+        }
+    }
+    if (nonInteractive) {
+        return null;
+    }
+    logger.info("Local NIM still needs an NVIDIA API key to download model manifests and weights.");
+    logger.info("Get an API key from: https://build.nvidia.com/settings/api-keys");
+    const input = await (0, prompt_js_1.promptInput)("Enter your NVIDIA API key for local NIM");
+    return input.trim() || null;
+}
 function detectOllama() {
     const installed = testCommand("command -v ollama >/dev/null 2>&1");
     const running = testCommand("curl -sf http://localhost:11434/api/tags >/dev/null 2>&1");
@@ -325,8 +348,10 @@ async function cliOnboard(opts) {
     }
     const credentialEnv = resolveCredentialEnv(endpointType);
     const requiresApiKey = endpointRequiresApiKey(endpointType);
+    const requiresLocalNimApiKey = endpointType === "nim-local";
     // Step 3: Credential
     let apiKey = defaultCredentialForEndpoint(endpointType);
+    let localNimApiKey = null;
     if (requiresApiKey) {
         if (opts.apiKey) {
             apiKey = opts.apiKey;
@@ -342,6 +367,13 @@ async function cliOnboard(opts) {
                 logger.info("Get an API key from: https://build.nvidia.com/settings/api-keys");
                 apiKey = await (0, prompt_js_1.promptInput)("Enter your NVIDIA API key");
             }
+        }
+    }
+    else if (requiresLocalNimApiKey) {
+        localNimApiKey = await resolveLocalNimApiKey(opts, nonInteractive, logger);
+        if (!localNimApiKey) {
+            logger.error("NVIDIA_API_KEY is required to start a local NIM container.");
+            return;
         }
     }
     else {
@@ -433,7 +465,7 @@ async function cliOnboard(opts) {
         logger.info(`  NCP Partner: ${ncpPartner}`);
     }
     logger.info(`  Model:       ${model}`);
-    logger.info(`  API Key:     ${requiresApiKey ? (0, validate_js_1.maskApiKey)(apiKey) : "not required (local provider)"}`);
+    logger.info(`  API Key:     ${requiresApiKey ? (0, validate_js_1.maskApiKey)(apiKey) : requiresLocalNimApiKey && localNimApiKey ? `${(0, validate_js_1.maskApiKey)(localNimApiKey)} (for local NIM downloads)` : "not required (local provider)"}`);
     logger.info(`  Credential:  $${credentialEnv}`);
     logger.info(`  Profile:     ${profile}`);
     logger.info(`  Provider:    ${providerName}`);
@@ -449,6 +481,8 @@ async function cliOnboard(opts) {
     logger.info("");
     logger.info("Applying configuration...");
     if (endpointType === "nim-local") {
+        process.env.NVIDIA_API_KEY = localNimApiKey ?? process.env.NVIDIA_API_KEY ?? "";
+        process.env.NGC_API_KEY = process.env.NGC_API_KEY?.trim() || process.env.NVIDIA_API_KEY;
         const runtime = (0, nim_js_1.createNimRuntime)();
         const gpu = (0, nim_js_1.detectGpu)(runtime);
         if (!gpu || !gpu.nimCapable) {
@@ -473,8 +507,12 @@ async function cliOnboard(opts) {
             return;
         }
         logger.info("Waiting for local NIM health check...");
-        if (!(0, nim_js_1.waitForNimHealth)(runtime)) {
-            logger.error("Local NIM did not become healthy on http://localhost:8000/v1.");
+        const startup = (0, nim_js_1.monitorNimStartup)(runtime, opts.pluginConfig.sandboxName, 8000, 1800, 5);
+        if (!startup.healthy) {
+            logger.error(startup.reason ?? "Local NIM did not become healthy on http://localhost:8000/v1.");
+            if (startup.detail) {
+                logger.error(startup.detail);
+            }
             return;
         }
         model = (0, nim_js_1.resolveRunningNimModel)(runtime, model, 8000);

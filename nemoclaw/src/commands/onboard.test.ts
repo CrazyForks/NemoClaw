@@ -105,6 +105,7 @@ vi.mock("../onboard/nim.js", () => ({
   resolveRunningNimModel: vi.fn((_: unknown, model: string) =>
     model === "nvidia/nemotron-3-nano-30b-a3b" ? "nvidia/nemotron-3-nano" : model,
   ),
+  monitorNimStartup: vi.fn(() => ({ healthy: true, state: "running" })),
   pullNimImage: vi.fn(() => "nvcr.io/nim/nvidia/nemotron-3-nano:latest"),
   startNimContainer: vi.fn(() => "nemoclaw-nim-openclaw"),
   waitForNimHealth: vi.fn(() => true),
@@ -166,7 +167,7 @@ beforeEach(() => {
     nimCapable: true,
   });
   vi.mocked(nim.pullNimImage).mockReturnValue("nvcr.io/nim/nvidia/nemotron-3-nano:latest");
-  vi.mocked(nim.waitForNimHealth).mockReturnValue(true);
+  vi.mocked(nim.monitorNimStartup).mockReturnValue({ healthy: true, state: "running" });
   vi.mocked(childProcess.execFileSync).mockImplementation(((_file: string, args?: readonly string[] | undefined) => {
     if (Array.isArray(args) && args[0] === "inference" && args[1] === "get") {
       return JSON.stringify({
@@ -257,7 +258,12 @@ describe("cliOnboard", () => {
   it("stops before provider creation when local nim does not become healthy", async () => {
     const lines: string[] = [];
     const logger = createLogger(lines);
-    vi.mocked(nim.waitForNimHealth).mockReturnValue(false);
+    vi.mocked(nim.monitorNimStartup).mockReturnValue({
+      healthy: false,
+      reason: "Local NIM did not become healthy on http://localhost:8000/v1.",
+      detail: "download still in progress",
+      state: "running",
+    });
 
     await cliOnboard({
       endpoint: "nim-local",

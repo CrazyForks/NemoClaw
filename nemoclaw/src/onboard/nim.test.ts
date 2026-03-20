@@ -9,6 +9,7 @@ import {
   getCompatibleModels,
   getImageForModel,
   getRecommendedModels,
+  monitorNimStartup,
   resolveRunningNimModel,
   getServedModelForModel,
   listModels,
@@ -210,6 +211,57 @@ describe("nim helpers", () => {
       "curl -sf http://localhost:8000/v1/models": '{"data":[]}',
     });
     expect(waitForNimHealth(runtime, 8000, 1, 0)).toBe(true);
+  });
+
+  it("reports a fatal startup error when container logs match a known failure pattern", () => {
+    const runtime = runtimeWithResponses({
+      "curl -sf http://localhost:8000/v1/models": "",
+      "docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw": "running",
+      "docker logs --tail 120 nemoclaw-nim-openclaw 2>&1":
+        "nimlib.exceptions.ManifestDownloadError: Error downloading manifest: error decoding response body",
+      "sleep 0": "",
+    });
+    expect(monitorNimStartup(runtime, "openclaw", 8000, 1, 0)).toMatchObject({
+      healthy: false,
+      reason: "NIM failed while downloading model files from NGC. This is usually a network or partial-download issue.",
+      state: "running",
+    });
+  });
+
+  it("reports when the container exits before becoming healthy", () => {
+    const runtime = runtimeWithResponses({
+      "curl -sf http://localhost:8000/v1/models": "",
+      "docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw": "exited",
+      "docker logs --tail 120 nemoclaw-nim-openclaw 2>&1": "container stopped",
+      "sleep 0": "",
+    });
+    expect(monitorNimStartup(runtime, "openclaw", 8000, 1, 0)).toMatchObject({
+      healthy: false,
+      state: "exited",
+    });
+  });
+
+  it("reports timeout details when startup never becomes healthy", () => {
+    let inspectCalls = 0;
+    const runtime: NimRuntime = {
+      exec(command: string): string {
+        if (command.includes("curl -sf http://localhost:8000/v1/models")) return "";
+        if (command.includes("docker inspect --format '{{.State.Status}}' nemoclaw-nim-openclaw")) {
+          inspectCalls += 1;
+          return "running";
+        }
+        if (command.includes("docker logs --tail 120 nemoclaw-nim-openclaw 2>&1")) return "still downloading";
+        if (command.includes("sleep 0")) return "";
+        throw new Error(`unexpected command: ${command}`);
+      },
+    };
+
+    expect(monitorNimStartup(runtime, "openclaw", 8000, 0, 0)).toMatchObject({
+      healthy: false,
+      reason: "Local NIM did not become healthy within 0 seconds.",
+      detail: "still downloading",
+    });
+    expect(inspectCalls).toBeGreaterThanOrEqual(0);
   });
 
   it("returns models compatible with the detected machine profile in recommendation order", () => {

@@ -692,8 +692,13 @@ async function setupNim(sandboxName, gpu) {
         nimContainer = nim.startNimContainer(sandboxName, model, 8000, resolvedImage);
 
         console.log("  Waiting for NIM to become healthy...");
-        if (!nim.waitForNimHealth()) {
-          console.error("  NIM failed to start. Falling back to cloud API.");
+        const startup = nim.monitorNimStartup(sandboxName, 8000, 1800);
+        if (!startup.healthy) {
+          console.error(`  ${startup.reason || "NIM failed to start."}`);
+          if (startup.detail) {
+            console.error(startup.detail);
+          }
+          console.error("  Falling back to cloud API.");
           model = null;
           nimContainer = null;
         } else {
