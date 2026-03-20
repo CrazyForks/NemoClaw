@@ -79,6 +79,23 @@ os.chmod(path, 0o600)
 PYAUTH
 }
 
+lock_gateway_config() {
+  # Lock openclaw.json so the sandboxed agent (running as "sandbox" user)
+  # cannot modify auth tokens, CORS origins, or other gateway security
+  # settings.  The gateway process (running as root) retains read access,
+  # and root bypasses DAC so any late writes (e.g. token generation) still
+  # succeed.
+  # Ref: https://github.com/NVIDIA/NemoClaw/issues/514
+  local config_path
+  config_path="$(python3 -c "import os; print(os.path.join(os.environ.get('HOME', '/sandbox'), '.openclaw', 'openclaw.json'))")"
+
+  if [ -f "$config_path" ]; then
+    chown root:root "$config_path"
+    chmod 444 "$config_path"
+    echo "[security] gateway config locked: $config_path"
+  fi
+}
+
 print_dashboard_urls() {
   local token chat_ui_base local_url remote_url
 
@@ -176,6 +193,7 @@ fix_openclaw_config
 openclaw plugins install /opt/nemoclaw > /dev/null 2>&1 || true
 
 if [ ${#NEMOCLAW_CMD[@]} -gt 0 ]; then
+  lock_gateway_config
   exec "${NEMOCLAW_CMD[@]}"
 fi
 
@@ -183,3 +201,4 @@ nohup openclaw gateway run > /tmp/gateway.log 2>&1 &
 echo "[gateway] openclaw gateway launched (pid $!)"
 start_auto_pair
 print_dashboard_urls
+lock_gateway_config
