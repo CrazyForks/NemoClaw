@@ -28,6 +28,9 @@ export interface NimRuntime {
 const MODEL_PULL_ALIASES: Record<string, string[]> = {
   "nvidia/nemotron-3-nano-30b-a3b": ["nvcr.io/nim/nvidia/nemotron-3-nano:latest"],
 };
+const MODEL_API_ALIASES: Record<string, string> = {
+  "nvidia/nemotron-3-nano-30b-a3b": "nvidia/nemotron-3-nano",
+};
 
 export function createNimRuntime(): NimRuntime {
   return {
@@ -64,6 +67,10 @@ function getPullCandidatesForModel(modelName: string): string[] {
     return [];
   }
   return [primary, ...(MODEL_PULL_ALIASES[modelName] ?? [])];
+}
+
+export function getServedModelForModel(modelName: string): string {
+  return MODEL_API_ALIASES[modelName] ?? modelName;
 }
 
 function getContainerCredentialArgs(): string[] {

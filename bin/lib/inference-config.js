@@ -45,7 +45,7 @@ function getProviderSelectionConfig(provider, model) {
         endpointType: "custom",
         endpointUrl: INFERENCE_ROUTE_URL,
         ncpPartner: null,
-        model: model || "nvidia/nemotron-3-nano-30b-a3b",
+        model: model || "nvidia/nemotron-3-nano",
         profile: DEFAULT_ROUTE_PROFILE,
         credentialEnv: DEFAULT_ROUTE_CREDENTIAL_ENV,
         provider,

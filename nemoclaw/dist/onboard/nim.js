@@ -6,6 +6,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNimRuntime = createNimRuntime;
+exports.getServedModelForModel = getServedModelForModel;
 exports.containerName = containerName;
 exports.listModels = listModels;
 exports.getImageForModel = getImageForModel;
@@ -17,6 +18,9 @@ const node_child_process_1 = require("node:child_process");
 const nim_images_json_1 = __importDefault(require("../../../bin/lib/nim-images.json"));
 const MODEL_PULL_ALIASES = {
     "nvidia/nemotron-3-nano-30b-a3b": ["nvcr.io/nim/nvidia/nemotron-3-nano:latest"],
+};
+const MODEL_API_ALIASES = {
+    "nvidia/nemotron-3-nano-30b-a3b": "nvidia/nemotron-3-nano",
 };
 function createNimRuntime() {
     return {
@@ -50,6 +54,9 @@ function getPullCandidatesForModel(modelName) {
         return [];
     }
     return [primary, ...(MODEL_PULL_ALIASES[modelName] ?? [])];
+}
+function getServedModelForModel(modelName) {
+    return MODEL_API_ALIASES[modelName] ?? modelName;
 }
 function getContainerCredentialArgs() {
     const credentials = [];

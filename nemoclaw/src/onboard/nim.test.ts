@@ -6,6 +6,7 @@ import {
   containerName,
   detectGpu,
   getImageForModel,
+  getServedModelForModel,
   listModels,
   pullNimImage,
   startNimContainer,
@@ -46,6 +47,13 @@ describe("nim helpers", () => {
 
   it("returns null for an unknown model", () => {
     expect(getImageForModel("bogus/model")).toBeNull();
+  });
+
+  it("maps aliased local NIM selections to the live API model id", () => {
+    expect(getServedModelForModel("nvidia/nemotron-3-nano-30b-a3b")).toBe("nvidia/nemotron-3-nano");
+    expect(getServedModelForModel("nvidia/nemotron-3-super-120b-a12b")).toBe(
+      "nvidia/nemotron-3-super-120b-a12b",
+    );
   });
 
   it("builds the managed container name", () => {

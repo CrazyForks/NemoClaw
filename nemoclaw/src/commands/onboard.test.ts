@@ -61,6 +61,9 @@ vi.mock("../onboard/nim.js", () => ({
       minGpuMemoryMB: 40960,
     },
   ]),
+  getServedModelForModel: vi.fn((model: string) =>
+    model === "nvidia/nemotron-3-nano-30b-a3b" ? "nvidia/nemotron-3-nano" : model,
+  ),
   pullNimImage: vi.fn(() => "nvcr.io/nim/nvidia/nemotron-3-nano:latest"),
   startNimContainer: vi.fn(() => "nemoclaw-nim-openclaw"),
   waitForNimHealth: vi.fn(() => true),
@@ -127,7 +130,7 @@ beforeEach(() => {
     if (Array.isArray(args) && args[0] === "inference" && args[1] === "get") {
       return JSON.stringify({
         provider: "nim-local",
-        model: "nvidia/nemotron-3-nano-30b-a3b",
+        model: "nvidia/nemotron-3-nano",
         endpoint: "http://host.openshell.internal:8000/v1",
       });
     }
@@ -187,7 +190,7 @@ describe("cliOnboard", () => {
     expect(childProcess.execFileSync).toHaveBeenNthCalledWith(
       2,
       "openshell",
-      ["inference", "set", "--provider", "nim-local", "--model", "nvidia/nemotron-3-nano-30b-a3b"],
+      ["inference", "set", "--provider", "nim-local", "--model", "nvidia/nemotron-3-nano"],
       expect.any(Object),
     );
     expect(childProcess.execFileSync).toHaveBeenNthCalledWith(
@@ -202,11 +205,11 @@ describe("cliOnboard", () => {
         endpointUrl: "http://host.openshell.internal:8000/v1",
         credentialEnv: "OPENAI_API_KEY",
         provider: "nim-local",
-        model: "nvidia/nemotron-3-nano-30b-a3b",
+        model: "nvidia/nemotron-3-nano",
       }),
     );
-    expect(lines.join("\n")).toContain("Inference route set: nim-local -> nvidia/nemotron-3-nano-30b-a3b");
-    expect(lines.join("\n")).toContain("Verified inference route: nim-local -> nvidia/nemotron-3-nano-30b-a3b");
+    expect(lines.join("\n")).toContain("Inference route set: nim-local -> nvidia/nemotron-3-nano");
+    expect(lines.join("\n")).toContain("Verified inference route: nim-local -> nvidia/nemotron-3-nano");
   });
 
   it("stops before provider creation when local nim does not become healthy", async () => {
@@ -301,7 +304,7 @@ describe("cliOnboard", () => {
 
     expect(onboardConfig.saveOnboardConfig).not.toHaveBeenCalled();
     expect(lines.join("\n")).toContain(
-      "ERROR:Inference route verification mismatch. Expected nim-local -> nvidia/nemotron-3-nano-30b-a3b, got nvidia-nim -> nvidia/nemotron-3-super-120b-a12b.",
+      "ERROR:Inference route verification mismatch. Expected nim-local -> nvidia/nemotron-3-nano, got nvidia-nim -> nvidia/nemotron-3-super-120b-a12b.",
     );
   });
 });

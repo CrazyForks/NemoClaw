@@ -21,6 +21,7 @@ import {
 import {
   createNimRuntime,
   detectGpu,
+  getServedModelForModel,
   listModels as listNimModels,
   pullNimImage,
   startNimContainer,
@@ -552,6 +553,8 @@ export async function cliOnboard(opts: OnboardOptions): Promise<void> {
       logger.error("Local NIM did not become healthy on http://localhost:8000/v1.");
       return;
     }
+
+    model = getServedModelForModel(model);
 
     const providerValidation = validateLocalProvider("nim-local", runCapture);
     if (!providerValidation.ok) {

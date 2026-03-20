@@ -441,6 +441,7 @@ async function cliOnboard(opts) {
             logger.error("Local NIM did not become healthy on http://localhost:8000/v1.");
             return;
         }
+        model = (0, nim_js_1.getServedModelForModel)(model);
         const providerValidation = (0, local_inference_js_1.validateLocalProvider)("nim-local", runCapture);
         if (!providerValidation.ok) {
             logger.error(providerValidation.message ?? "Local NIM is unavailable.");

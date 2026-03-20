@@ -36,6 +36,22 @@ describe("nim", () => {
     });
   });
 
+  describe("getServedModelForModel", () => {
+    it("maps aliased pull targets to the live API model id", () => {
+      assert.equal(
+        nim.getServedModelForModel("nvidia/nemotron-3-nano-30b-a3b"),
+        "nvidia/nemotron-3-nano"
+      );
+    });
+
+    it("returns the original model id when no alias is needed", () => {
+      assert.equal(
+        nim.getServedModelForModel("nvidia/nemotron-3-super-120b-a12b"),
+        "nvidia/nemotron-3-super-120b-a12b"
+      );
+    });
+  });
+
   describe("pullNimImage", () => {
     it("falls back to the alternate nano image when the primary pull is denied", () => {
       const runnerPath = path.join(__dirname, "..", "bin", "lib", "runner.js");

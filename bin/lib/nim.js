@@ -8,6 +8,9 @@ const nimImages = require("./nim-images.json");
 const MODEL_PULL_ALIASES = {
   "nvidia/nemotron-3-nano-30b-a3b": ["nvcr.io/nim/nvidia/nemotron-3-nano:latest"],
 };
+const MODEL_API_ALIASES = {
+  "nvidia/nemotron-3-nano-30b-a3b": "nvidia/nemotron-3-nano",
+};
 
 function containerName(sandboxName) {
   return `nemoclaw-nim-${sandboxName}`;
@@ -22,6 +25,10 @@ function getPullCandidatesForModel(modelName) {
   const primary = getImageForModel(modelName);
   if (!primary) return [];
   return [primary, ...(MODEL_PULL_ALIASES[modelName] || [])];
+}
+
+function getServedModelForModel(modelName) {
+  return MODEL_API_ALIASES[modelName] || modelName;
 }
 
 function shellQuote(value) {
@@ -236,6 +243,7 @@ function nimStatus(sandboxName) {
 module.exports = {
   containerName,
   getImageForModel,
+  getServedModelForModel,
   listModels,
   detectGpu,
   pullNimImage,

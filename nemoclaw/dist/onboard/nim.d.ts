@@ -17,6 +17,7 @@ export interface NimRuntime {
     exec(command: string): string;
 }
 export declare function createNimRuntime(): NimRuntime;
+export declare function getServedModelForModel(modelName: string): string;
 export declare function containerName(sandboxName: string): string;
 export declare function listModels(): NimModel[];
 export declare function getImageForModel(modelName: string): string | null;

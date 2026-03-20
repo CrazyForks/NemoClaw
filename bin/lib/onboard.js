@@ -661,6 +661,7 @@ async function setupNim(sandboxName, gpu) {
           model = null;
           nimContainer = null;
         } else {
+          model = nim.getServedModelForModel(model);
           provider = "nim-local";
         }
       }
