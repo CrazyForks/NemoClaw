@@ -146,95 +146,88 @@ describe("platform helpers", () => {
 
   describe("isJetson", () => {
     it("detects Jetson from kernel release string", () => {
-      assert.equal(
+      expect(
         isJetson({
           platform: "linux",
           release: "5.15.185-tegra",
           deviceTreeCompatible: "",
           nvTegraRelease: "",
         }),
-        true,
-      );
+      ).toBe(true);
     });
 
     it("detects Jetson from device tree compatible", () => {
-      assert.equal(
+      expect(
         isJetson({
           platform: "linux",
           release: "5.15.0-generic",
           deviceTreeCompatible: "nvidia,p3768-0000+p3767-0005\0nvidia,jetson-orin-nano\0nvidia,tegra234\0",
           nvTegraRelease: "",
         }),
-        true,
-      );
+      ).toBe(true);
     });
 
     it("detects Jetson from /etc/nv_tegra_release", () => {
-      assert.equal(
+      expect(
         isJetson({
           platform: "linux",
           release: "5.15.0-generic",
           deviceTreeCompatible: "",
           nvTegraRelease: "# R36 (release), REVISION: 4.3",
         }),
-        true,
-      );
+      ).toBe(true);
     });
 
     it("returns false for non-Jetson Linux", () => {
-      assert.equal(
+      expect(
         isJetson({
           platform: "linux",
           release: "6.8.0-41-generic",
           deviceTreeCompatible: "",
           nvTegraRelease: "",
         }),
-        false,
-      );
+      ).toBe(false);
     });
 
     it("returns false for macOS", () => {
-      assert.equal(
+      expect(
         isJetson({
           platform: "darwin",
           release: "24.6.0",
           deviceTreeCompatible: "",
           nvTegraRelease: "",
         }),
-        false,
-      );
+      ).toBe(false);
     });
   });
 
   describe("hasNfTablesNatSupport", () => {
     it("returns true when nft_chain_nat is loaded", () => {
-      assert.equal(
+      expect(
         hasNfTablesNatSupport({
           platform: "linux",
           procModules: "nft_chain_nat 16384 1 - Live 0xffff\nnf_nat 49152 2 - Live 0xffff",
         }),
-        true,
-      );
+      ).toBe(true);
     });
 
     it("returns false when nft_chain_nat is absent", () => {
-      assert.equal(
+      expect(
         hasNfTablesNatSupport({
           platform: "linux",
           procModules: "nf_conntrack 163840 3 - Live 0xffff\nip_tables 32768 0 - Live 0xffff",
         }),
-        false,
-      );
+      ).toBe(false);
     });
 
     it("returns true on non-Linux (not applicable)", () => {
-      assert.equal(hasNfTablesNatSupport({ platform: "darwin" }), true);
+      expect(hasNfTablesNatSupport({ platform: "darwin" })).toBe(true);
     });
   });
 
   describe("needsIptablesLegacy", () => {
     it("returns true for Jetson without nf_tables NAT", () => {
-      assert.equal(
+      expect(
         needsIptablesLegacy({
           platform: "linux",
           release: "5.15.185-tegra",
@@ -242,12 +235,11 @@ describe("platform helpers", () => {
           nvTegraRelease: "",
           procModules: "ip_tables 32768 0 - Live 0xffff",
         }),
-        true,
-      );
+      ).toBe(true);
     });
 
     it("returns false for Jetson with nf_tables NAT", () => {
-      assert.equal(
+      expect(
         needsIptablesLegacy({
           platform: "linux",
           release: "5.15.185-tegra",
@@ -255,12 +247,11 @@ describe("platform helpers", () => {
           nvTegraRelease: "",
           procModules: "nft_chain_nat 16384 1 - Live 0xffff",
         }),
-        false,
-      );
+      ).toBe(false);
     });
 
     it("returns false for non-Jetson Linux", () => {
-      assert.equal(
+      expect(
         needsIptablesLegacy({
           platform: "linux",
           release: "6.8.0-41-generic",
@@ -268,12 +259,11 @@ describe("platform helpers", () => {
           nvTegraRelease: "",
           procModules: "",
         }),
-        false,
-      );
+      ).toBe(false);
     });
 
     it("returns false for macOS", () => {
-      assert.equal(needsIptablesLegacy({ platform: "darwin" }), false);
+      expect(needsIptablesLegacy({ platform: "darwin" })).toBe(false);
     });
   });
 });
