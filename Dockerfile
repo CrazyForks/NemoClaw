@@ -186,41 +186,41 @@ RUN openclaw doctor --fix > /dev/null 2>&1 || true \
 # EXPERIMENTAL: small model mode — write compact workspace files so local models
 # spend fewer tokens on system prompt and more on actual conversation.
 # Users can still override these files inside the sandbox after creation.
-# shellcheck disable=SC2016
+# hadolint ignore=SC2016
 RUN if [ "$NEMOCLAW_SMALL_MODEL_MODE" = "1" ]; then \
       echo '[experimental] Small model mode: writing compact workspace files'; \
-      cat > /sandbox/.openclaw-data/workspace/SOUL.md <<'SOUL_EOF'
-# SOUL
-
-You are a helpful AI assistant running locally. Be concise and direct.
-
-- Answer questions accurately
-- Admit when you don't know something
-- Keep responses short unless asked to elaborate
-- Use tools when available and appropriate
-- Never fabricate information
-SOUL_EOF
-      cat > /sandbox/.openclaw-data/workspace/AGENTS.md <<'AGENTS_EOF'
-# Agents
-
-## Startup
-
-Read these files if they exist:
-- `SOUL.md` — your behavioral rules
-- `USER.md` — context about the person you're helping
-
-## Rules
-
-- Safe to do freely: read files, search, organize workspace
-- Ask before: sending messages, deleting files, any external action
-- Never exfiltrate private data
-- Use `trash` instead of `rm`
-
-## Memory
-
-Write notes to `memory/YYYY-MM-DD.md` to remember things across sessions.
-Curate important facts into `MEMORY.md`.
-AGENTS_EOF
+      printf '%s\n' \
+        '# SOUL' \
+        '' \
+        'You are a helpful AI assistant running locally. Be concise and direct.' \
+        '' \
+        '- Answer questions accurately' \
+        '- Admit when you don'\''t know something' \
+        '- Keep responses short unless asked to elaborate' \
+        '- Use tools when available and appropriate' \
+        '- Never fabricate information' \
+        > /sandbox/.openclaw-data/workspace/SOUL.md; \
+      printf '%s\n' \
+        '# Agents' \
+        '' \
+        '## Startup' \
+        '' \
+        'Read these files if they exist:' \
+        '- `SOUL.md` — your behavioral rules' \
+        '- `USER.md` — context about the person you are helping' \
+        '' \
+        '## Rules' \
+        '' \
+        '- Safe to do freely: read files, search, organize workspace' \
+        '- Ask before: sending messages, deleting files, any external action' \
+        '- Never exfiltrate private data' \
+        '- Use `trash` instead of `rm`' \
+        '' \
+        '## Memory' \
+        '' \
+        'Write notes to `memory/YYYY-MM-DD.md` to remember things across sessions.' \
+        'Curate important facts into `MEMORY.md`.' \
+        > /sandbox/.openclaw-data/workspace/AGENTS.md; \
     fi
 
 # Lock openclaw.json via DAC: chown to root so the sandbox user cannot modify
